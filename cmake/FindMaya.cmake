@@ -9,7 +9,7 @@
 # MAYA_<lib>_FOUND       Defined if <lib> has been found
 # MAYA_<lib>_LIBRARY     Path to <lib> library
 # MAYA_LIBRARY_DIR       Path to the library directory
-# MAYA_INCLUDE_DIR       Path to the devkit's include directories
+# MAYA_INCLUDE_DIRS      Path to the devkit's include directories
 # MAYA_PLUGIN_SUFFIX     File extension for the maya plugin
 # MAYA_QT_VERSION_SHORT  Version of Qt used by Maya (e.g. 4.7)
 # MAYA_QT_VERSION_LONG   Full version of Qt used by Maya (e.g. 4.7.1)
@@ -86,9 +86,9 @@ MACRO( MAYA_SET_PLUGIN_PROPERTIES target)
   
 ENDMACRO(MAYA_SET_PLUGIN_PROPERTIES)
 
-
+SET(MAYA_FOUND FALSE)
 SET(_maya_TEST_VERSIONS)
-SET(_maya_KNOWN_VERSIONS "2008" "2009" "2010" "2011" "2012" "2013")
+SET(_maya_KNOWN_VERSIONS "2009" "2010" "2011" "2012" "2013" "2014" "2015")
 
 IF(APPLE)
   SET(MAYA_PLUGIN_SUFFIX ".bundle")
@@ -102,17 +102,21 @@ ENDIF()
 IF(Maya_FIND_VERSION_EXACT)
   LIST(APPEND _maya_TEST_VERSIONS "${Maya_FIND_VERSION}")
 ELSE(Maya_FIND_VERSION_EXACT)
+  # exact version not requested. we have some wiggle room
   IF(Maya_FIND_VERSION)
+    # loop through known versions and find anything >= requested
     FOREACH(version ${_maya_KNOWN_VERSIONS})
       IF(NOT "${version}" VERSION_LESS "${Maya_FIND_VERSION}")
         LIST(APPEND _maya_TEST_VERSIONS "${version}" )
       ENDIF()
     ENDFOREACH(version)
   ELSE(Maya_FIND_VERSION)
+    # no version specified: test everything
     SET(_maya_TEST_VERSIONS ${_maya_KNOWN_VERSIONS})
   ENDIF(Maya_FIND_VERSION)
 ENDIF(Maya_FIND_VERSION_EXACT)
 
+# create empty list
 SET(_maya_TEST_PATHS)
 
 # generate list of paths to test
@@ -147,15 +151,16 @@ FIND_PROGRAM(MAYA_EXECUTABLE maya
 
 IF(MAYA_EXECUTABLE)
   # TODO: use GET_FILENAME_COMPONENT here
+  # derive MAYA_LOCATION from MAYA_EXECUTABLE
   STRING(REGEX REPLACE "/bin/maya.*" "" MAYA_LOCATION "${MAYA_EXECUTABLE}")
 
-  STRING(REGEX MATCH "20[0-9][0-9]" MAYA_VERSION "${MAYA_LOCATION}")
+  STRING(REGEX MATCH "20[0-9][0-9]" MAYA_VERSION "$ENV{MAYA_LOCATION}")
     
   IF(Maya_FIND_VERSION)
     # test that we've found a valid version
-    LIST(FIND _maya_TEST_VERSIONS ${MAYA_VERSION} _maya_FOUND_INDEX)
+    LIST(FIND _maya_TEST_VERSIONS $ENV{MAYA_VERSION} _maya_FOUND_INDEX)
     IF(${_maya_FOUND_INDEX} EQUAL -1)
-      MESSAGE(STATUS "Found Maya version ${MAYA_VERSION}, but requested at least ${Maya_FIND_VERSION}. Re-searching without environment variables...")
+      MESSAGE(STATUS "Found Maya version $ENV{MAYA_VERSION}, but requested at least ${Maya_FIND_VERSION}. Re-searching without environment variables...")
       SET(MAYA_LOCATION NOTFOUND)
       # search again, but don't use environment variables
       # (these should be only paths we constructed based on requested version)
@@ -166,21 +171,30 @@ IF(MAYA_EXECUTABLE)
         DOC "Maya's Base Directory"
         NO_SYSTEM_ENVIRONMENT_PATH
       )
-      SET(MAYA_EXECUTABLE "${MAYA_LOCATION}/bin/maya" CACHE PATH "Maya's executable path")
-      STRING(REGEX MATCH "20[0-9][0-9]" MAYA_VERSION "${MAYA_LOCATION}")
+      SET(MAYA_EXECUTABLE "$ENV{MAYA_LOCATION}/bin/maya" CACHE PATH "Maya's executable path")
+      STRING(REGEX MATCH "20[0-9][0-9]" MAYA_VERSION "$ENV{MAYA_LOCATION}")
     #ELSE: error?
     ENDIF(${_maya_FOUND_INDEX} EQUAL -1)
   ENDIF(Maya_FIND_VERSION)
+  set(MAYA_FOUND TRUE)
 ENDIF(MAYA_EXECUTABLE)
 
+MESSAGE(STATUS "Maya location: $ENV{MAYA_LOCATION}")
+MESSAGE(STATUS "Maya VERSION: $ENV{MAYA_VERSION}")
 # Qt Versions
-IF(${MAYA_VERSION} STREQUAL "2011")
+IF($ENV{MAYA_VERSION} STREQUAL "2011")
   SET(MAYA_QT_VERSION_SHORT CACHE STRING "4.5")
   SET(MAYA_QT_VERSION_LONG  CACHE STRING "4.5.3")
-ELSEIF(${MAYA_VERSION} STREQUAL "2012")
+ELSEIF($ENV{MAYA_VERSION} STREQUAL "2012")
   SET(MAYA_QT_VERSION_SHORT CACHE STRING "4.7")
   SET(MAYA_QT_VERSION_LONG  CACHE STRING "4.7.1")
-ELSEIF(${MAYA_VERSION} STREQUAL "2013")
+ELSEIF($ENV{MAYA_VERSION} STREQUAL "2013")
+  SET(MAYA_QT_VERSION_SHORT CACHE STRING "4.7")
+  SET(MAYA_QT_VERSION_LONG  CACHE STRING "4.7.1")
+ELSEIF($ENV{MAYA_VERSION} STREQUAL "2014")
+  SET(MAYA_QT_VERSION_SHORT CACHE STRING "4.7")
+  SET(MAYA_QT_VERSION_LONG  CACHE STRING "4.7.1")
+ELSEIF($ENV{MAYA_VERSION} STREQUAL "2015")
   SET(MAYA_QT_VERSION_SHORT CACHE STRING "4.7")
   SET(MAYA_QT_VERSION_LONG  CACHE STRING "4.7.1")
 ENDIF()
@@ -194,20 +208,31 @@ ENDIF()
 # - If the maya executable is found in a standard location, or in $MAYA_LOCATION/bin or $PATH, and the
 #   includes and libs are in standard locations relative to the binary, they will be found
 
-MESSAGE(STATUS "Maya location: ${MAYA_LOCATION}")
 
 FIND_PATH(MAYA_INCLUDE_DIR maya/MFn.h
   HINTS
-    ${MAYA_LOCATION}
+    $ENV{MAYA_LOCATION}
   PATH_SUFFIXES
     include               # linux and windows
     ../../devkit/include  # osx
   DOC "Maya's include path"
 )
 
+LIST(APPEND MAYA_INCLUDE_DIRS ${MAYA_INCLUDE_DIR})
+
+FIND_PATH(MAYA_DEVKIT_INC_DIR GL/glext.h
+  HINTS
+    $ENV{MAYA_LOCATION}
+  PATH_SUFFIXES
+	devkit/plug-ins/
+  DOC "Maya's devkit headers path"
+)
+LIST(APPEND MAYA_INCLUDE_DIRS ${MAYA_DEVKIT_INC_DIR})
+
+
 FIND_PATH(MAYA_LIBRARY_DIR libOpenMaya.dylib libOpenMaya.so OpenMaya.lib
   HINTS
-    ${MAYA_LOCATION}
+    $ENV{MAYA_LOCATION}
   PATH_SUFFIXES
     lib    # linux and windows
     MacOS  # osx
@@ -228,10 +253,11 @@ FOREACH(_maya_lib
 #  cg
 #  cgGL
 )
+  # HINTS is searched before PATHS, so preference is given to MAYA_LOCATION (set via MAYA_EXECUTABLE)
   IF(APPLE)
     FIND_LIBRARY(MAYA_${_maya_lib}_LIBRARY ${_maya_lib}
       HINTS
-        ${MAYA_LOCATION}
+        $ENV{MAYA_LOCATION}
       PATHS
         ${_maya_TEST_PATHS}
       PATH_SUFFIXES
@@ -242,7 +268,7 @@ FOREACH(_maya_lib
   ELSE(APPLE)
     FIND_LIBRARY(MAYA_${_maya_lib}_LIBRARY ${_maya_lib}
       HINTS
-        ${MAYA_LOCATION}
+        $ENV{MAYA_LOCATION}
       PATHS
         ${_maya_TEST_PATHS}
       PATH_SUFFIXES
@@ -256,7 +282,7 @@ ENDFOREACH(_maya_lib)
 
 FIND_PATH(MAYA_USER_DIR
   NAMES
-    ${MAYA_VERSION}-x64 ${MAYA_VERSION}
+    $ENV{MAYA_VERSION}-x64 $ENV{MAYA_VERSION}
   PATHS
     $ENV{HOME}/Library/Preferences/Autodesk/maya  # osx
     $ENV{USERPROFILE}/Documents/maya              # windows
